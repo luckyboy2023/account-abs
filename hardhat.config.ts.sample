@@ -1,0 +1,28 @@
+import { HardhatUserConfig } from "hardhat/config";
+import "@nomicfoundation/hardhat-toolbox";
+
+const config: HardhatUserConfig = {
+  solidity: "0.8.24",
+  networks: {
+    hardhat: {
+      chainId: 31337, // 设置本地测试网络的链ID
+      allowUnlimitedContractSize: true,
+      accounts: [
+        {
+          privateKey: "",
+          balance: "10000000000000000000000" // 设置账户的初始余额（以 wei 为单位）
+        }
+      ]
+    },
+    localhost: {
+      url: `http://127.0.0.1:8545`,
+      accounts: [""]
+    },
+    sepolia: {
+      url: `https://lodestar-sepoliarpc.chainsafe.io`,
+      accounts: [""]
+    }
+  }
+};
+
+export default config;
