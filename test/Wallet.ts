@@ -1,7 +1,8 @@
 import { ethers } from "hardhat";
 import {AbiCoder, keccak256, recoverAddress, SigningKey, Interface} from "ethers";
-import walletCont from "../artifacts/contracts/wallet/Wallet.sol/Wallet.json";
+import walletCont from "../artifacts/contracts/src/Wallet.sol/Wallet.json";
 import LockCont from "../artifacts/contracts/Lock.sol/Lock.json";
+import EntryPointCont from "../artifacts/contracts/src/EntryPoint.sol/EntryPoint.json";
 import {time, loadFixture,} from "@nomicfoundation/hardhat-toolbox/network-helpers";
 
 describe("wallet", function(){
@@ -28,6 +29,14 @@ describe("wallet", function(){
     
         return { lock, unlockTime, lockedAmount, owner, otherAccount };
     }
+
+    async function deployEntryPointFixture() {
+        const [owner] = await ethers.getSigners();
+        const optionEntryPoint = new ethers.ContractFactory(
+            EntryPointCont.abi, EntryPointCont.bytecode, owner);
+        const entryPoint = await optionEntryPoint.deploy();
+        return {owner, entryPoint};
+    }
     
     describe("executeOp", function(){
         it("execute lock op", async function () {
@@ -37,26 +46,25 @@ describe("wallet", function(){
             let iface = new Interface(LockCont.abi);
             const rawData = await iface.encodeFunctionData("withdraw", []);
             let execData = {
+                sender: await wallet.getAddress(),
                 to: await lock.getAddress(),
                 data: rawData,
                 value: 0,
                 gas: 600000,
                 nonce: 0,
+                maxFeePerGas: 21000,
+                maxPriorityFeePerGas: 100,
             };
 
             const abiCoder = new AbiCoder();
-            const encExecData = await abiCoder.encode(["address", "bytes", "uint256", "uint256", "uint256"], 
-                [execData.to, execData.data, execData.value, execData.gas, execData.nonce]);
+            const encExecData = await abiCoder.encode(["address","address", "bytes", "uint256", "uint256", "uint256"], 
+                [execData.sender, execData.to, execData.data, execData.value, execData.gas, execData.nonce]);
             
             const signingKey = new SigningKey(hre.network.config.accounts[0].privateKey);
             const signature = await signingKey.sign(await keccak256(encExecData)).serialized;
             await owner.sendTransaction({
                 to: await lock.getAddress(),
-                value: await ethers.parseEther("10.0"), // Sends exactly 1.0 ether
-            });
-            await owner.sendTransaction({
-                to: await wallet.getAddress(),
-                value: await ethers.parseEther("10.0"), // Sends exactly 1.0 ether
+                value: await ethers.parseEther("1.0"), // Sends exactly 1.0 ether
             });
             execData.signature = signature;
             await lock.connect(owner).changeOwner(wallet.getAddress());
@@ -65,8 +73,44 @@ describe("wallet", function(){
             const to_balance2 = await ethers.provider.getBalance(wallet.getAddress());
             console.log(to_balance1);
             console.log(to_balance2);
+        });
 
-           
-          });
+        it("entrypoint handle op", async function () {
+            const { owner, wallet } = await loadFixture(deployWalletFixture);
+            const { lock } = await loadFixture(deployOneYearLockFixture);
+            const { entryPoint } = await loadFixture(deployEntryPointFixture);
+
+            let iface = new Interface(LockCont.abi);
+            const rawData = await iface.encodeFunctionData("withdraw", []);
+            let execData = {
+                sender: await wallet.getAddress(),
+                to: await lock.getAddress(),
+                data: rawData,
+                value: 0,
+                gas: 600000,
+                nonce: 0,
+                maxFeePerGas: 21000,
+                maxPriorityFeePerGas: 100,
+            };
+
+            const abiCoder = new AbiCoder();
+            const encExecData = await abiCoder.encode(["address","address", "bytes", "uint256", "uint256", "uint256"], 
+                [execData.sender, execData.to, execData.data, execData.value, execData.gas, execData.nonce]);
+            
+            const signingKey = new SigningKey(hre.network.config.accounts[0].privateKey);
+            const signature = await signingKey.sign(await keccak256(encExecData)).serialized;
+            await owner.sendTransaction({
+                to: await lock.getAddress(),
+                value: await ethers.parseEther("1.0"), // Sends exactly 1.0 ether
+            });
+            execData.signature = signature;
+            await lock.connect(owner).changeOwner(wallet.getAddress());
+            await entryPoint.connect(owner).deposit(wallet.getAddress(), { value:  await ethers.parseEther("1.0") });
+            const to_balance1 = await ethers.provider.getBalance(entryPoint.getAddress());
+            await entryPoint.connect(owner).handleOp(execData);
+            const to_balance2 = await ethers.provider.getBalance(entryPoint.getAddress());
+            console.log(to_balance1);
+            console.log(to_balance2);
+        });
     })
 })
